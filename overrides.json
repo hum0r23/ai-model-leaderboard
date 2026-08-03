@@ -1,0 +1,49 @@
+{
+  "_comment": "Manual data overlay for models not yet indexed by Artificial Analysis (e.g. brand-new releases). Front-end merges these into live AA data; once AA includes the model (matched by slug keyword), AA values win. Values below are calibrated against AA-reported scores of peers (Claude Fable 5, GPT-5.6 Sol) using officially published benchmark deltas.",
+  "models": [
+    {
+      "id": "qwen3.8-max-overlay",
+      "name": "Qwen3.8-Max",
+      "shortName": "Qwen3.8-Max",
+      "slug": "qwen3-8-max",
+      "releaseDate": "2026-08-03",
+      "isReasoning": true,
+      "deprecated": false,
+      "creator": {
+        "name": "Alibaba",
+        "slug": "alibaba",
+        "country": "cn",
+        "color": "#ec1c24"
+      },
+      "estimated": true,
+      "official": {
+        "paramsTotal": "2.4T (激活 95B, MoE)",
+        "GPQA Diamond": 92.6,
+        "IFBench": 82.8,
+        "PaperBench": 93.0,
+        "OSWorld-Verified": 86.1,
+        "AndroidWorld": 85.3,
+        "WideSearch": 81.9,
+        "Agent's Last Exam": 52.4,
+        "CoWorkBench": 74.8,
+        "JobBench": 53.4
+      },
+      "evaluations": {
+        "intelligenceIndex": 59.6,
+        "intelligenceIndexIsEstimated": true,
+        "codingIndex": 77.8,
+        "codingIndexIsEstimated": true,
+        "agenticIndex": 53.2,
+        "agenticIndexIsEstimated": true,
+        "terminalbenchV21": null,
+        "terminalbenchHard": null
+      },
+      "calibrationNote": "估算基准:PaperBench 93.0 > Claude Fable 5 (88.8) 与 GPT-5.6 Sol (90.5);GPQA 92.6;OSWorld-Verified 86.1 领先;CoWorkBench 74.8 ≈ Fable 5 (75.9)。Terminal-Bench 官方尚未公布。",
+      "sources": [
+        "https://www.163.com/dy/article/L3DEB79A0514R9P4.html",
+        "https://www.sohu.com/a/1058116357_130887",
+        "https://www.leiphone.com/category/industrynews/RRdMRyI267uY6noU.html"
+      ]
+    }
+  ]
+}

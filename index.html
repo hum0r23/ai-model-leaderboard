@@ -1,0 +1,108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>全球 AI 大模型综合能力排行榜 · 实时数据</title>
+<meta name="description" content="实时更新的全球 AI 大模型综合能力排行榜:智能、编码、Agentic、Terminal-Bench 多维度对比,数据直抓 Artificial Analysis 公开排行榜,每日快照兜底。包含 Qwen3.8-Max 等最新模型。" />
+<link rel="stylesheet" href="styles.css" />
+<link rel="repo" href="" />
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <div>
+      <h1>全球 AI 大模型 <span class="accent">综合能力排行榜</span></h1>
+      <div class="sub">多维度实时对比 · 智能 / 编码 / Agentic / Terminal-Bench · Top 20</div>
+    </div>
+    <div class="live-badge"><span class="dot"></span>LIVE 实时数据</div>
+  </header>
+
+  <div class="status">
+    <div class="item">数据来源:<span id="status-source"><b>加载中…</b></span></div>
+    <div class="sep"></div>
+    <div class="item">数据时间:<b id="status-time">—</b></div>
+    <div class="sep"></div>
+    <div class="item">模型库:<b id="status-count">—</b></div>
+    <div class="sep"></div>
+    <div class="item">自动刷新:<b id="status-timer">—</b></div>
+    <div class="sep"></div>
+    <div class="item" id="status-live"></div>
+    <button class="refresh-btn" title="强制重新抓取实时数据">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36M21 3v6h-6"/></svg>
+      刷新
+    </button>
+  </div>
+
+  <div class="tabs" id="tabs">
+    <button class="tab active" data-key="composite">综合排序<span id="tab-arrow"> ↓</span></button>
+    <button class="tab" data-key="intelligenceIndex">智能程度</button>
+    <button class="tab" data-key="codingIndex">Coding 编码</button>
+    <button class="tab" data-key="agenticIndex">Agentic 智能体</button>
+    <button class="tab" data-key="terminal">Terminal-Bench</button>
+    <button class="tab active" id="agg-btn" style="margin-left:auto;border-color:var(--brand);color:var(--brand)">聚合模式:最强变体 ✓</button>
+  </div>
+
+  <div class="chart-card">
+    <div class="chart-title">综合得分 Top 12</div>
+    <div class="chart-sub">综合分 = 智能 35% + 编码 25% + Agentic 20% + Terminal 20%(缺失维度自动按比例归一)</div>
+    <div class="bars" id="chart-bars"><div style="color:var(--ink-3);font-size:13px">加载中…</div></div>
+  </div>
+
+  <div class="table-card">
+    <div class="tbl-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th style="width:56px">排名</th>
+            <th>模型 / 厂商</th>
+            <th class="sortable" data-key="composite">综合 <span class="arrow"></span></th>
+            <th class="sortable" data-key="intelligenceIndex">智能 <span class="arrow"></span></th>
+            <th class="sortable" data-key="codingIndex">编码 <span class="arrow"></span></th>
+            <th class="sortable" data-key="agenticIndex">Agentic <span class="arrow"></span></th>
+            <th class="sortable" data-key="terminal">Terminal <span class="arrow"></span></th>
+          </tr>
+        </thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+    <div class="more-wrap" id="more-wrap" style="display:none">
+      <button class="more-btn" id="more-btn">显示更多模型</button>
+    </div>
+    <div style="padding:12px 16px;font-size:12px;color:var(--ink-3);border-top:1px solid var(--line)" id="table-note"></div>
+  </div>
+
+  <div class="notes">
+    <div class="note">
+      <h3>📊 数据与方法</h3>
+      <ul>
+        <li><b>实时主源:</b>打开页面时直抓 <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a> 公开排行榜页,浏览器内解析,数据即当前最新。</li>
+        <li><b>快照兜底:</b>GitHub Actions 每日自动抓取生成 <code>data/llms.json</code>;实时源不可用时自动切换。</li>
+        <li><b>综合分</b>= 智能 35% + 编码 25% + Agentic 20% + Terminal-Bench 20%,缺失维度自动重新归一。</li>
+        <li>Terminal-Bench 取 2.1 版优先,缺失时回退 Hard 版。</li>
+      </ul>
+    </div>
+    <div class="note">
+      <h3>🚀 Qwen3.8-Max(2026-08-03 发布)</h3>
+      <div class="qwen-highlight">
+        发布当天尚未被 AA 收录,本页按官方基准与同级模型(Claude Fable 5 / GPT-5.6 Sol)对标<b>估算</b>其三维分数(标注"估算"),并展示官方基准:PaperBench <b>93.0</b>、GPQA Diamond <b>92.6</b>、OSWorld-Verified <b>86.1</b>、IFBench <b>82.8</b>、CoWorkBench <b>74.8</b>。<br/>
+        <span style="font-size:12px;color:var(--ink-3)">Terminal-Bench 官方未公布;AA 收录后本页将自动切换为官方实测数据。</span>
+      </div>
+      <ul style="margin-top:8px">
+        <li>2.4T 总参数(MoE,激活 95B),支持 1M 上下文与视觉理解。</li>
+        <li>Arena 三方榜单仅次于 Claude 系列;CodeArena 全球第 4。</li>
+        <li>下周开源权重(含 Qwen3.8-27B)。</li>
+      </ul>
+    </div>
+  </div>
+
+  <footer>
+    数据提供:<a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a>(引用需保留来源)· 快照由 GitHub Actions 每日自动更新 · 本站开源部署于 GitHub Pages
+  </footer>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>
