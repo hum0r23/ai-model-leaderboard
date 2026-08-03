@@ -1,0 +1,43 @@
+name: daily-fetch
+
+on:
+  schedule:
+    # 每天 04:00 UTC = 12:00 北京时间,抓取最新排行榜快照
+    - cron: "0 4 * * *"
+  workflow_dispatch: # 支持手动触发
+
+permissions:
+  contents: write
+
+concurrency:
+  group: daily-fetch
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Fetch Artificial Analysis snapshot
+        run: python scripts/fetch_aa.py
+
+      - name: Commit & push snapshot
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/llms.json data/latest.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(data): refresh AA leaderboard snapshot [skip ci]"
+            git push
+            echo "::notice::Snapshot updated"
+          else
+            echo "::notice::No changes, snapshot already up to date"
+          fi
