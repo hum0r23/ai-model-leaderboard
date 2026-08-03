@@ -201,10 +201,11 @@ function getRepoBase() {
     const parts = u.pathname.split("/").filter(Boolean);
     if (parts.length >= 2) return `${u.origin}/${parts[0]}/${parts[1]}/main`;
   }
-  // 2) GitHub Pages 部署时从域名自动推断: https://user.github.io/repo/ → user/repo
+  // 2) GitHub Pages 部署时从域名自动推断: https://user.github.io/repo/ → raw.githubusercontent.com/user/repo/main
   if (location.hostname.endsWith(".github.io")) {
+    const user = location.hostname.split(".")[0];
     const parts = location.pathname.split("/").filter(Boolean);
-    if (parts.length) return `${location.origin}/${parts[0]}/main`;
+    if (user && parts.length) return `https://raw.githubusercontent.com/${user}/${parts[0]}/main`;
   }
   return RAW_PREFIX + REPO;
 }
