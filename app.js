@@ -233,13 +233,17 @@ async function fetchLiveAA() {
 
 function mergeOverlays(models, overlays) {
   const list = models.slice();
+  const norm = (s) => (s || "").toLowerCase().replace(/[^a-z0-9]/g, "");
   for (const ov of overlays || []) {
-    const slugKey = (ov.slug || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    const ovSlug = norm(ov.slug);
+    const ovName = norm(ov.name || ov.shortName); // 完整名(含版本),如 qwen38max
     const exists = list.some((m) => {
-      const s = (m.slug || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-      return s === slugKey || (m.name || "").toLowerCase().includes((ov.shortName || "").toLowerCase());
+      const s = norm(m.slug), n = norm(m.name);
+      if (s === ovSlug || n === ovName) return true;          // 1) 精确:slug / 全名相同
+      if (ovName.length >= 6 && (n.startsWith(ovName) || s.startsWith(ovName))) return true; // 2) 前缀:AA 收录为 "Qwen3.8-Max-xxx" 等变体
+      return false;
     });
-    if (!exists) list.push(ov);
+    if (!exists) list.push(ov); // 实时源尚未收录 → 以官方估算桥接
   }
   return list;
 }
