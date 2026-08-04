@@ -333,9 +333,11 @@ function scoreCell(val, opts = {}) {
 }
 
 function modelCell(m, i) {
-  const isQwen = /qwen/i.test(m.slug || m.name || "");
   const tags = [];
-  if (isQwen && /3\.8/i.test(m.name || "")) tags.push('<span class="tag tag-new">今日发布</span>');
+  if (m.releaseDate) {
+    const ageDays = (Date.now() - new Date(m.releaseDate).getTime()) / 86400000;
+    if (ageDays >= 0 && ageDays <= 7) tags.push('<span class="tag tag-new">新发布</span>');
+  }
   if (m.estimated) tags.push('<span class="tag tag-est">估算</span>');
   if (m.isOpenWeights) tags.push('<span class="tag tag-open">开源</span>');
   const metaBits = [];
