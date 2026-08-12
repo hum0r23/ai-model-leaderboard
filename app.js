@@ -261,6 +261,15 @@ async function loadData(forceLive = false) {
   let source = null;
   let fetchedAt = null;
 
+  // 降级记忆:若近期直抓已被 CORS 拦截,30 分钟内不再重复尝试,直接走快照(减少等待与报错提示)
+  let skipLive = false;
+  if (!forceLive) {
+    const blocked = sessionStorage.getItem("aa_cors_blocked");
+    if (blocked) {
+      try { if (Date.now() - JSON.parse(blocked).t < 30 * 60 * 1000) skipLive = true; } catch (e) {}
+    }
+  }
+
   if (cached) {
     try {
       const c = JSON.parse(cached);
@@ -273,20 +282,26 @@ async function loadData(forceLive = false) {
   }
 
   if (!parsed) {
-    try {
-      parsed = await fetchLiveAA();
-      source = "live";
-      fetchedAt = Date.now();
-      try { sessionStorage.setItem("aa_live", JSON.stringify({ t: fetchedAt, models: parsed })); } catch (e) {}
-      toast("已实时拉取 Artificial Analysis 最新数据 ✓");
-    } catch (e) {
-      console.warn("live fetch failed, falling back to snapshot:", e);
+    if (!skipLive) {
+      try {
+        parsed = await fetchLiveAA();
+        source = "live";
+        fetchedAt = Date.now();
+        try { sessionStorage.setItem("aa_live", JSON.stringify({ t: fetchedAt, models: parsed })); } catch (e) {}
+        try { sessionStorage.removeItem("aa_cors_blocked"); } catch (e) {}
+        toast("已实时拉取 Artificial Analysis 最新数据 ✓");
+      } catch (e) {
+        console.warn("live fetch failed, falling back to snapshot:", e);
+        try { sessionStorage.setItem("aa_cors_blocked", JSON.stringify({ t: Date.now() })); } catch (e2) {}
+      }
+    }
+    if (!parsed) {
       try {
         const snap = await fetchLocal(SNAPSHOT);
         parsed = snap.models;
         source = "snapshot";
         fetchedAt = snap.meta && snap.meta.fetched_at ? Date.parse(snap.meta.fetched_at) : null;
-        toast("AA 页面暂不允许浏览器直连,已载入自动同步快照(约每 6 小时更新)", true);
+        // 静默回退:状态栏已显示"自动同步",不再弹报错提示
       } catch (e2) {
         toast("数据加载失败,请稍后重试", true);
         state.refreshing = false;
