@@ -2,8 +2,8 @@ name: daily-fetch
 
 on:
   schedule:
-    # 每天 04:00 UTC = 12:00 北京时间,抓取最新排行榜快照
-    - cron: "0 4 * * *"
+    # 每 6 小时同步一次(00/06/12/18 UTC = 北京时间 08/14/20/02 点),快照最大延迟 6 小时
+    - cron: "0 */6 * * *"
   workflow_dispatch: # 支持手动触发
 
 permissions:

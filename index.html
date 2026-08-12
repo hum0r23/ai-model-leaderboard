@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>全球 AI 大模型综合能力排行榜 · 实时数据</title>
 <meta name="description" content="实时更新的全球 AI 大模型综合能力排行榜:智能、编码、Agentic、Terminal-Bench 多维度对比,数据直抓 Artificial Analysis 公开排行榜,每日快照兜底。纯实时数据,无手动填充。" />
-<link rel="stylesheet" href="styles.css?v=20260804" />
+<link rel="stylesheet" href="styles.css?v=20260812" />
 <link rel="repo" href="" />
 </head>
 <body>
@@ -77,8 +77,8 @@
     <div class="note">
       <h3>📊 数据与方法</h3>
       <ul>
-        <li><b>实时主源:</b>打开页面时直抓 <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a> 公开排行榜页,浏览器内解析,数据即当前最新。</li>
-        <li><b>快照兜底:</b>GitHub Actions 每日自动抓取生成 <code>data/llms.json</code>;实时源不可用时自动切换。</li>
+        <li><b>实时主源:</b>打开页面时直抓 <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a> 公开排行榜页,浏览器内解析,数据即当前最新;若其站点暂不允许浏览器直连,自动切换为下方同步快照。</li>
+        <li><b>同步快照:</b>GitHub Actions 每 6 小时服务器端自动抓取生成 <code>data/llms.json</code>,最大延迟 6 小时;实时源恢复后自动切回。</li>
         <li><b>综合分</b>= 智能 35% + 编码 25% + Agentic 20% + Terminal-Bench 20%,缺失维度自动重新归一。</li>
         <li>Terminal-Bench 取 2.1 版优先,缺失时回退 Hard 版。</li>
         <li>本页仅展示实时源原始数据,无任何手动填充条目。</li>
@@ -87,11 +87,11 @@
   </div>
 
   <footer>
-    数据提供:<a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a>(引用需保留来源)· 快照由 GitHub Actions 每日自动更新 · 本站开源部署于 GitHub Pages
+    数据提供:<a href="https://artificialanalysis.ai" target="_blank" rel="noopener">Artificial Analysis</a>(引用需保留来源)· 快照由 GitHub Actions 每 6 小时自动同步 · 本站开源部署于 GitHub Pages
   </footer>
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="app.js?v=20260804"></script>
+<script src="app.js?v=20260812"></script>
 </body>
 </html>

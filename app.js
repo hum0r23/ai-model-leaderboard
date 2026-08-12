@@ -286,7 +286,7 @@ async function loadData(forceLive = false) {
         parsed = snap.models;
         source = "snapshot";
         fetchedAt = snap.meta && snap.meta.fetched_at ? Date.parse(snap.meta.fetched_at) : null;
-        toast("实时源暂不可用,已载入每日快照数据", true);
+        toast("AA 页面暂不允许浏览器直连,已载入自动同步快照(约每 6 小时更新)", true);
       } catch (e2) {
         toast("数据加载失败,请稍后重试", true);
         state.refreshing = false;
@@ -406,7 +406,7 @@ function renderStatus() {
   if (state.source === "live") {
     srcEl.innerHTML = `<b>实时</b> · Artificial Analysis 页面直抓`;
   } else if (state.source === "snapshot") {
-    srcEl.innerHTML = `<b>快照</b> · GitHub Actions 每日更新`;
+    srcEl.innerHTML = `<b>自动同步</b> · 服务器端抓取快照`;
   } else {
     srcEl.innerHTML = "—";
   }
@@ -415,7 +415,7 @@ function renderStatus() {
   if (state.source === "live") {
     $("#status-live").textContent = "本次为实时抓取,数据即当前最新";
   } else if (state.source === "snapshot") {
-    $("#status-live").textContent = "快照由每日自动任务更新,最新数据可能在实时源恢复后自动切换";
+    $("#status-live").textContent = "AA 页面暂不允许浏览器直连,已切换为服务器端自动同步快照(约每 6 小时更新,实时源恢复后自动切回)";
   }
 }
 
