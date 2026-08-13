@@ -366,10 +366,9 @@ function modelCell(m, i) {
 }
 
 function rowHtml(m, i) {
-  const isQwen38 = /qwen/i.test(m.slug || "") && /3\.8/i.test(m.name || "");
   const t = m._terminal;
   const terminalLabel = t.v != null ? `TB ${t.ver}` : "";
-  return `<tr class="${isQwen38 ? "qwen-row" : ""}">
+  return `<tr>
     <td class="cell-rank">${rankBadge(i)}</td>
     <td>${modelCell(m, i)}</td>
     <td class="td-composite">${m._composite != null ? m._composite.toFixed(1) : "—"}</td>
@@ -405,9 +404,8 @@ function render() {
 function renderChart() {
   const box = $("#chart-bars");
   const rows = state.models.slice(0, 12).map((m, i) => {
-    const isQwen38 = /qwen/i.test(m.slug || "") && /3\.8/i.test(m.name || "");
     const label = (m.shortName || m.name).replace(/\s*\(.*\)$/, "");
-    return `<div class="bar-row ${isQwen38 ? "qwen" : ""}">
+    return `<div class="bar-row">
       <div class="rank">${i + 1}</div>
       <div class="bar-track"><div class="bar-fill" style="width:${Math.max(6, m._composite)}%">${esc(label)}</div></div>
       <div class="score">${m._composite.toFixed(1)}</div>
