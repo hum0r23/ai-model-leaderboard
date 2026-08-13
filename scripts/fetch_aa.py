@@ -12,6 +12,7 @@ Data provided by Artificial Analysis — attribution required: https://artificia
 from __future__ import annotations
 
 import json
+import math
 import re
 import sys
 import urllib.request
@@ -152,6 +153,80 @@ def normalize(model: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _composite(model: dict[str, Any]) -> float | None:
+    """Same composite formula as the front-end (int 35% / coding 25% / agentic 20% / terminal 20%)."""
+    ev = model["evaluations"]
+    t = ev.get("terminalbenchV21")
+    if t is None:
+        t = ev.get("terminalbenchHard")
+    t100 = t * 100 if isinstance(t, (int, float)) else None
+    dims = [
+        (ev.get("intelligenceIndex"), 0.35),
+        (ev.get("codingIndex"), 0.25),
+        (ev.get("agenticIndex"), 0.20),
+        (t100, 0.20),
+    ]
+    s = w = 0.0
+    for v, wt in dims:
+        if v is not None and isinstance(v, (int, float)) and math.isfinite(v):
+            s += v * wt
+            w += wt
+    return s / w if w > 0 else None
+
+
+def update_stability(models: list[dict[str, Any]], now: str) -> None:
+    """Maintain data/stability.json: per-model composite-score volatility + first-seen date.
+    Compared against the previous snapshot (data/llms.json) to measure rank stability."""
+    stab_path = DATA_DIR / "stability.json"
+    stab: dict[str, Any] = {"updated_at": now, "models": {}}
+    if stab_path.exists():
+        try:
+            stab = json.loads(stab_path.read_text(encoding="utf-8"))
+        except Exception:
+            stab = {"updated_at": now, "models": {}}
+    stab.setdefault("models", {})
+
+    prev: dict[str, dict[str, Any]] = {}
+    llms_path = DATA_DIR / "llms.json"
+    if llms_path.exists():
+        try:
+            for m in json.loads(llms_path.read_text(encoding="utf-8"))["models"]:
+                prev[m.get("slug")] = m
+        except Exception:
+            prev = {}
+
+    for m in models:
+        slug = m.get("slug")
+        if not slug:
+            continue
+        cur = _composite(m)
+        if cur is None:
+            continue
+        entry = stab["models"].setdefault(slug, {"deltas": [], "first_seen": now, "changes": 0})
+        if slug in prev:
+            pc = _composite(prev[slug])
+            if pc is not None:
+                d = round(abs(cur - pc), 2)
+                deltas = list(entry.get("deltas") or [])
+                deltas.append(d)
+                entry["deltas"] = deltas[-6:]  # keep last 6 snapshots
+                if d > 0.5:
+                    entry["changes"] = int(entry.get("changes", 0)) + 1
+        else:
+            # first time this model appears in our snapshots
+            if not entry.get("deltas"):
+                entry["deltas"] = []
+            if not entry.get("first_seen"):
+                entry["first_seen"] = now
+
+    # prune models that disappeared from the leaderboard
+    cur_slugs = {m.get("slug") for m in models if m.get("slug")}
+    stab["models"] = {k: v for k, v in stab["models"].items() if k in cur_slugs}
+
+    with open(stab_path, "w", encoding="utf-8") as f:
+        json.dump(stab, f, ensure_ascii=False)
+
+
 def main() -> int:
     print(f"[fetch] GET {PAGE_URL}")
     html = http_get(PAGE_URL).decode("utf-8", "ignore")
@@ -181,7 +256,8 @@ def main() -> int:
     with open(DATA_DIR / "latest.json", "w", encoding="utf-8") as f:
         json.dump({"fetched_at": now, "model_count": len(models)}, f, ensure_ascii=False)
 
-    print(f"[fetch] wrote {llms_path} ({llms_path.stat().st_size/1024/1024:.1f} MB)")
+    update_stability(models, now)
+    print(f"[fetch] wrote {llms_path} ({llms_path.stat().st_size/1024/1024:.1f} MB) + stability.json")
     return 0
 
 

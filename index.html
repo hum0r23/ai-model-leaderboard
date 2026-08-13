@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>全球 AI 大模型综合能力排行榜 · 实时数据</title>
 <meta name="description" content="实时更新的全球 AI 大模型综合能力排行榜:智能、编码、Agentic、Terminal-Bench 多维度对比,数据直抓 Artificial Analysis 公开排行榜,每日快照兜底。纯实时数据,无手动填充。" />
-<link rel="stylesheet" href="styles.css?v=20260813d" />
+<link rel="stylesheet" href="styles.css?v=20260813e" />
 <link rel="repo" href="" />
 </head>
 <body>
@@ -62,7 +62,7 @@
             <th class="sortable" data-key="codingIndex">编码 <span class="arrow"></span></th>
             <th class="sortable" data-key="agenticIndex">Agentic <span class="arrow"></span></th>
             <th class="sortable" data-key="terminal">Terminal <span class="arrow"></span></th>
-            <th class="sortable" data-key="maturity" title="数据成熟度:维度完整度 + 是否估算 + 评测样本规模">成熟度 <span class="arrow"></span></th>
+            <th class="sortable" data-key="maturity" title="数据成熟度(进度):越接近100表示排名越稳定可靠">成熟度 <span class="arrow"></span></th>
           </tr>
         </thead>
         <tbody id="tbody"></tbody>
@@ -82,7 +82,7 @@
         <li><b>同步快照:</b>GitHub Actions 每 6 小时服务器端自动抓取生成 <code>data/llms.json</code>,最大延迟 6 小时;实时源恢复后自动切回。</li>
         <li><b>综合分</b>= 智能 35% + 编码 25% + Agentic 20% + Terminal-Bench 20%,缺失维度自动重新归一。</li>
         <li>Terminal-Bench 取 2.1 版优先,缺失时回退 Hard 版。</li>
-        <li><b>数据成熟度</b>(官方无现成字段,基于 AA 官方数据派生,满分 100 递减):估算标志 -35、维度缺失 -10/维、评测样本规模逐档递减;悬停可看明细。</li>
+        <li><b>数据成熟度</b>(进度语义:100 = 排名已稳定可靠;基于 AA 官方数据 + 本站快照历史派生):估算 -35、维度缺失 -10/维、评测样本规模、分数历史波动与上榜资历逐项递减;悬停可看明细。</li>
         <li>本页仅展示实时源原始数据,无任何手动填充条目。</li>
       </ul>
     </div>
@@ -94,6 +94,6 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="app.js?v=20260813d"></script>
+<script src="app.js?v=20260813e"></script>
 </body>
 </html>

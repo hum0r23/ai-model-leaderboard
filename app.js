@@ -35,6 +35,7 @@ const state = {
   fetchedAt: null,
   count: 0,
   refreshing: false,
+  stability: null,   // data/stability.json(分数波动 + 首次上榜时间)
 };
 
 /* ---------------- helpers ---------------- */
@@ -173,13 +174,14 @@ function dimValue(m, key) {
   return v != null && isFinite(v) ? v : null;
 }
 
-/* ---------------- 数据成熟度 ----------------
- * 官方无现成"成熟度"字段,基于 AA 官方数据派生,满分 100 递减:
- *   估算惩罚 -35 : AA 官方 intelligenceIndexIsEstimated(最强不成熟信号)
- *   维度缺失 -10/维 : 智能/编码/Agentic/Terminal 每缺 1 个维度
- *   评测规模递减 : ≥1B 不扣, 500M-1B -3, 100M-500M -8, 10M-100M -12,
- *                  <10M -15, 无数据 -18
- * 注:新发布 ≠ 不成熟,只要 AA 评测充分(非估算+规模足)即高分。
+/* ---------------- 数据成熟度(进度语义) ----------------
+ * 官方无现成字段,基于 AA 官方数据 + 本站快照历史派生,满分 100 递减:
+ *   估算 -35 : AA 官方 intelligenceIndexIsEstimated(数据不可靠)
+ *   维度缺失 -10/维 : 智能/编码/Agentic/Terminal 每缺 1 个
+ *   评测规模递减 : 规模越小越可能还会变(≥1B 不扣, 无数据 -18)
+ *   分数波动 : 最近快照间综合分变化越大越不稳(最高 -10) + 累计变动次数
+ *   资历 : 发布/上榜不足 30 天递减(-8/-5/-2)
+ * 100 = 排名已稳定可靠(进度条走满)。
  */
 function maturityScore(m) {
   const ev = m.evaluations;
@@ -191,6 +193,20 @@ function maturityScore(m) {
   const t = (m.evalStats && m.evalStats.totalTokens) || 0;
   if (t <= 0) s -= 18; else if (t < 1e7) s -= 15; else if (t < 1e8) s -= 12;
   else if (t < 5e8) s -= 8; else if (t < 1e9) s -= 3;
+  // ---- 稳定性:波动 + 资历 ----
+  const st = state.stability && state.stability.models && state.stability.models[m.slug];
+  if (st) {
+    const deltas = st.deltas || [];
+    const last = deltas.length ? deltas[deltas.length - 1] : 0;
+    if (last > 2) s -= 10; else if (last > 1) s -= 7; else if (last > 0.5) s -= 4; else if (last > 0.2) s -= 2;
+    s -= Math.min(10, (st.changes || 0) * 3);
+    const seenDays = st.first_seen ? (Date.now() - Date.parse(st.first_seen)) / 86400000 : NaN;
+    const relDays = m.releaseDate ? (Date.now() - Date.parse(m.releaseDate)) / 86400000 : NaN;
+    const ageDays = Math.max(isFinite(seenDays) ? seenDays : 0, isFinite(relDays) ? relDays : 0);
+    if (ageDays < 7) s -= 8; else if (ageDays < 14) s -= 5; else if (ageDays < 30) s -= 2;
+  } else {
+    s -= 5; // 旧快照无稳定性档案
+  }
   return Math.max(0, Math.min(100, Math.round(s)));
 }
 
@@ -340,6 +356,11 @@ async function loadData(forceLive = false) {
   try { overlays = await fetchLocal(OVERRIDES); } catch (e) { console.warn("overrides unavailable", e); }
   const merged = mergeOverlays(parsed.map(normalize), (overlays.models || []).map(normalize));
 
+  // 加载稳定性档案(分数波动 + 首次上榜时间,由快照历史维护)
+  let stability = null;
+  try { stability = await fetchLocal("data/stability.json"); } catch (e) { console.warn("stability unavailable", e); }
+  state.stability = stability;
+
   state.allModels = merged
     .filter((m) => !m.deprecated)
     .map((m) => ({ ...m, _composite: compositeScore(m), _terminal: terminalScore(m) }))
@@ -409,7 +430,15 @@ function maturityHint(m) {
   const dims = [ev.intelligenceIndex, ev.codingIndex, ev.agenticIndex, ev.terminalbenchV21 ?? ev.terminalbenchHard];
   const c = dims.filter((v) => v != null && isFinite(v)).length;
   const t = (m.evalStats && m.evalStats.totalTokens) || 0;
-  return `数据成熟度依据 AA 官方数据:维度完整度 ${c}/4 · ${ev.intelligenceIndexIsEstimated ? "智能指数为估算" : "非估算"} · 评测样本约 ${(t / 1e6).toFixed(0)}M tokens`;
+  const st = state.stability && state.stability.models && state.stability.models[m.slug];
+  let stabNote = "暂无历史档案";
+  if (st) {
+    const deltas = st.deltas || [];
+    const last = deltas.length ? deltas[deltas.length - 1] : 0;
+    stabNote = `近 ${deltas.length} 次快照最大波动 ${Math.max(0, ...deltas).toFixed(1)} 分 · 变动 ${st.changes || 0} 次`;
+    if (st.first_seen) stabNote += ` · 上榜于 ${new Date(st.first_seen).toLocaleDateString("zh-CN")}`;
+  }
+  return `成熟度=100 减去:维度缺失 ${4 - c}/4(-${(4 - c) * 10}) · ${ev.intelligenceIndexIsEstimated ? "官方估算(-35)" : "非估算"} · 评测样本约 ${(t / 1e6).toFixed(0)}M tokens · ${stabNote}`;
 }
 
 function maturityCell(v) {
