@@ -103,7 +103,7 @@ header.hero { display: flex; align-items: flex-end; justify-content: space-betwe
   box-shadow: var(--shadow); overflow: hidden;
 }
 .tbl-scroll { overflow-x: auto; }
-table { width: 100%; border-collapse: collapse; min-width: 900px; }
+table { width: 100%; border-collapse: collapse; min-width: 1060px; }
 thead th {
   position: sticky; top: 0; background: #f8f9fe; color: var(--ink-2);
   font-size: 12.5px; font-weight: 700; text-align: left; padding: 12px 14px;
@@ -141,6 +141,9 @@ tbody tr:hover { background: #fafbff; }
 .cell-score .bar i { display: block; height: 100%; border-radius: 3px; background: var(--grad); }
 .cell-score.dim-terminal .bar i { background: linear-gradient(90deg, #0ea5e9, #38bdf8); }
 .cell-score .na { color: var(--ink-3); font-size: 12px; }
+.cell-score.dim-maturity .bar i.m-hi { background: linear-gradient(90deg, #0f9d6e, #34d399); }
+.cell-score.dim-maturity .bar i.m-mid { background: linear-gradient(90deg, #378add, #85b7eb); }
+.cell-score.dim-maturity .bar i.m-lo { background: linear-gradient(90deg, #9aa3b5, #c3c9d4); }
 
 .td-composite { font-size: 15px; font-weight: 800; }
 

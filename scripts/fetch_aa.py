@@ -80,6 +80,17 @@ def extract_models_from_page(html: str) -> list[dict[str, Any]]:
     raise RuntimeError("Could not locate detailed llm models payload in page HTML")
 
 
+def _eval_total_tokens(eval_token_counts: Any) -> int | None:
+    """Sum input+output tokens across all eval tasks (proxy for eval thoroughness)."""
+    if not isinstance(eval_token_counts, dict):
+        return None
+    total = 0
+    for task in eval_token_counts.values():
+        if isinstance(task, dict):
+            total += (task.get("inputTokens") or 0) + (task.get("outputTokens") or 0)
+    return total
+
+
 def normalize(model: dict[str, Any]) -> dict[str, Any]:
     return {
         "id": model.get("id"),
@@ -116,6 +127,10 @@ def normalize(model: dict[str, Any]) -> dict[str, Any]:
             "itbenchSre": model.get("itbenchSre"),
             "gdpvalNormalized": model.get("gdpvalNormalized"),
             "mmmuPro": model.get("mmmuPro"),
+        },
+        "evalStats": {
+            "totalTokens": _eval_total_tokens(model.get("evalTokenCounts")),
+            "isEstimated": model.get("intelligenceIndexIsEstimated"),
         },
         "pricing": {
             "price1mInputTokens": model.get("price1mInputTokens"),

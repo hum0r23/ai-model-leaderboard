@@ -125,12 +125,13 @@ function normalize(raw) {
     },
     evaluations: {
       intelligenceIndex: raw.evaluations ? raw.evaluations.intelligenceIndex : raw.intelligenceIndex ?? null,
-      intelligenceIndexIsEstimated: raw.evaluations ? raw.evaluations.intelligenceIndexIsEstimated : null,
+      intelligenceIndexIsEstimated: raw.evaluations ? raw.evaluations.intelligenceIndexIsEstimated : raw.intelligenceIndexIsEstimated ?? null,
       codingIndex: raw.evaluations ? raw.evaluations.codingIndex : raw.codingIndex ?? null,
       agenticIndex: raw.evaluations ? raw.evaluations.agenticIndex : raw.agenticIndex ?? null,
       terminalbenchHard: raw.evaluations ? raw.evaluations.terminalbenchHard : raw.terminalbenchHard ?? null,
       terminalbenchV21: raw.evaluations ? raw.evaluations.terminalbenchV21 : raw.terminalbenchV21 ?? null,
     },
+    evalStats: (raw.evaluations && raw.evaluations.evalStats) || raw.evalStats || null,
     pricing: raw.pricing || null,
     performance: raw.performance || null,
     contextWindowTokens: raw.contextWindowTokens ?? null,
@@ -167,8 +168,27 @@ function compositeScore(m) {
 function dimValue(m, key) {
   if (key === "composite") return compositeScore(m);
   if (key === "terminal") return terminalScore(m).v;
+  if (key === "maturity") return maturityScore(m);
   const v = m.evaluations[key];
   return v != null && isFinite(v) ? v : null;
+}
+
+/* ---------------- 数据成熟度 ----------------
+ * 官方无现成"成熟度"字段,基于 AA 官方数据派生:
+ *   完整度 40% : 智能/编码/Agentic/Terminal 四维度有值个数(4/4=40)
+ *   估算 20%   : AA 官方 intelligenceIndexIsEstimated 标志(非估算=20, 估算=6)
+ *   评测规模 40%: evalTokenCounts 总 token 数(评测越充分分越高)
+ */
+function maturityScore(m) {
+  const ev = m.evaluations;
+  const dims = [ev.intelligenceIndex, ev.codingIndex, ev.agenticIndex, ev.terminalbenchV21 ?? ev.terminalbenchHard];
+  const complete = dims.filter((v) => v != null && isFinite(v)).length;
+  let s = (complete / 4) * 40;
+  s += ev.intelligenceIndexIsEstimated ? 6 : 20;
+  const t = (m.evalStats && m.evalStats.totalTokens) || 0;
+  if (t >= 2e9) s += 40; else if (t >= 1e9) s += 35; else if (t >= 5e8) s += 28;
+  else if (t >= 1e8) s += 20; else if (t >= 1e7) s += 12; else if (t > 0) s += 6;
+  return Math.round(Math.min(100, s));
 }
 
 /* ---------------- 聚合 ---------------- */
@@ -368,6 +388,7 @@ function modelCell(m, i) {
 function rowHtml(m, i) {
   const t = m._terminal;
   const terminalLabel = t.v != null ? `TB ${t.ver}` : "";
+  const maturity = maturityScore(m);
   return `<tr>
     <td class="cell-rank">${rankBadge(i)}</td>
     <td>${modelCell(m, i)}</td>
@@ -376,7 +397,21 @@ function rowHtml(m, i) {
     <td class="cell-score">${scoreCell(dimValue(m, "codingIndex"))}</td>
     <td class="cell-score">${scoreCell(dimValue(m, "agenticIndex"))}</td>
     <td class="cell-score dim-terminal" title="${terminalLabel}">${scoreCell(t.v)}</td>
+    <td class="cell-score dim-maturity" title="${maturityHint(m)}">${maturityCell(maturity)}</td>
   </tr>`;
+}
+
+function maturityHint(m) {
+  const ev = m.evaluations;
+  const dims = [ev.intelligenceIndex, ev.codingIndex, ev.agenticIndex, ev.terminalbenchV21 ?? ev.terminalbenchHard];
+  const c = dims.filter((v) => v != null && isFinite(v)).length;
+  const t = (m.evalStats && m.evalStats.totalTokens) || 0;
+  return `数据成熟度依据 AA 官方数据:维度完整度 ${c}/4 · ${ev.intelligenceIndexIsEstimated ? "智能指数为估算" : "非估算"} · 评测样本约 ${(t / 1e6).toFixed(0)}M tokens`;
+}
+
+function maturityCell(v) {
+  const cls = v >= 85 ? "hi" : v >= 65 ? "mid" : "lo";
+  return `<div class="val">${v}</div><div class="bar"><i class="m-${cls}" style="width:${Math.max(4, v)}%"></i></div>`;
 }
 
 function sortModels() {
