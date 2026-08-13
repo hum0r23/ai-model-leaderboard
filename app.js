@@ -174,21 +174,24 @@ function dimValue(m, key) {
 }
 
 /* ---------------- 数据成熟度 ----------------
- * 官方无现成"成熟度"字段,基于 AA 官方数据派生:
- *   完整度 40% : 智能/编码/Agentic/Terminal 四维度有值个数(4/4=40)
- *   估算 20%   : AA 官方 intelligenceIndexIsEstimated 标志(非估算=20, 估算=6)
- *   评测规模 40%: evalTokenCounts 总 token 数(评测越充分分越高)
+ * 官方无现成"成熟度"字段,基于 AA 官方数据派生,满分 100 递减:
+ *   估算惩罚 -35 : AA 官方 intelligenceIndexIsEstimated(最强不成熟信号)
+ *   维度缺失 -10/维 : 智能/编码/Agentic/Terminal 每缺 1 个维度
+ *   评测规模递减 : ≥1B 不扣, 500M-1B -3, 100M-500M -8, 10M-100M -12,
+ *                  <10M -15, 无数据 -18
+ * 注:新发布 ≠ 不成熟,只要 AA 评测充分(非估算+规模足)即高分。
  */
 function maturityScore(m) {
   const ev = m.evaluations;
   const dims = [ev.intelligenceIndex, ev.codingIndex, ev.agenticIndex, ev.terminalbenchV21 ?? ev.terminalbenchHard];
   const complete = dims.filter((v) => v != null && isFinite(v)).length;
-  let s = (complete / 4) * 40;
-  s += ev.intelligenceIndexIsEstimated ? 6 : 20;
+  let s = 100;
+  if (ev.intelligenceIndexIsEstimated) s -= 35;
+  s -= (4 - complete) * 10;
   const t = (m.evalStats && m.evalStats.totalTokens) || 0;
-  if (t >= 2e9) s += 40; else if (t >= 1e9) s += 35; else if (t >= 5e8) s += 28;
-  else if (t >= 1e8) s += 20; else if (t >= 1e7) s += 12; else if (t > 0) s += 6;
-  return Math.round(Math.min(100, s));
+  if (t <= 0) s -= 18; else if (t < 1e7) s -= 15; else if (t < 1e8) s -= 12;
+  else if (t < 5e8) s -= 8; else if (t < 1e9) s -= 3;
+  return Math.max(0, Math.min(100, Math.round(s)));
 }
 
 /* ---------------- 聚合 ---------------- */
