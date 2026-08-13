@@ -105,6 +105,15 @@ function parseAAPage(html) {
 }
 
 /* ---------------- 归一化 ---------------- */
+// 直抓(AA 原始)数据的评测规模汇总: evalTokenCounts → 总 tokens
+function sumEvalTokens(ec) {
+  if (!ec || typeof ec !== "object") return 0;
+  let s = 0;
+  for (const task of Object.values(ec)) {
+    if (task && typeof task === "object") s += (task.inputTokens || 0) + (task.outputTokens || 0);
+  }
+  return s;
+}
 function normalize(raw) {
   return {
     id: raw.id,
@@ -132,7 +141,10 @@ function normalize(raw) {
       terminalbenchHard: raw.evaluations ? raw.evaluations.terminalbenchHard : raw.terminalbenchHard ?? null,
       terminalbenchV21: raw.evaluations ? raw.evaluations.terminalbenchV21 : raw.terminalbenchV21 ?? null,
     },
-    evalStats: (raw.evaluations && raw.evaluations.evalStats) || raw.evalStats || null,
+    evalStats:
+      (raw.evaluations && raw.evaluations.evalStats) ||
+      raw.evalStats ||
+      (raw.evalTokenCounts ? { totalTokens: sumEvalTokens(raw.evalTokenCounts), isEstimated: !!raw.intelligenceIndexIsEstimated } : null),
     pricing: raw.pricing || null,
     performance: raw.performance || null,
     contextWindowTokens: raw.contextWindowTokens ?? null,
@@ -312,7 +324,9 @@ async function loadData(forceLive = false) {
   if (cached) {
     try {
       const c = JSON.parse(cached);
-      if (Date.now() - c.t < CACHE_TTL) {
+      const first = Array.isArray(c.models) && c.models[0];
+      // 验证缓存结构完整(旧版缓存可能缺字段),不完整则丢弃重新加载
+      if (Date.now() - c.t < CACHE_TTL && first && (first.modelCreatorId || first.slug || first.name)) {
         parsed = c.models;
         source = "live";
         fetchedAt = c.t;
