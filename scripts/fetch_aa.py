@@ -184,6 +184,7 @@ def update_stability(models: list[dict[str, Any]], now: str) -> None:
             stab = json.loads(stab_path.read_text(encoding="utf-8"))
         except Exception:
             stab = {"updated_at": now, "models": {}}
+    stab["updated_at"] = now  # 每次运行都刷新时间戳
     stab.setdefault("models", {})
 
     prev: dict[str, dict[str, Any]] = {}
