@@ -192,7 +192,7 @@ function dimValue(m, key) {
  *   维度缺失 -10/维(离散)
  *   评测规模(连续):对数映射, 1M tokens→-18, 100M→-6, 1B→0
  *   分数波动(连续):最近快照 delta 0.2→0, 2+→-10 线性;变动次数累计 -3/次(封顶-10)
- *   资历(连续):0 天→-8, 27 天→0 线性衰减(取发布日/首次上榜较早者)
+ *   资历(连续):0 天→-18, 30 天→0 线性衰减(取发布日/首次上榜较早者)
  * 100 = 排名已稳定可靠(进度条走满)。返回 1 位小数。
  */
 function maturityScore(m) {
@@ -215,9 +215,9 @@ function maturityScore(m) {
     const seenDays = st.first_seen ? (Date.now() - Date.parse(st.first_seen)) / 86400000 : NaN;
     const relDays = m.releaseDate ? (Date.now() - Date.parse(m.releaseDate)) / 86400000 : NaN;
     const ageDays = Math.max(isFinite(seenDays) ? seenDays : 0, isFinite(relDays) ? relDays : 0);
-    s -= Math.max(0, 8 - ageDays * (8 / 27));
+    s -= Math.max(0, 18 - ageDays * (18 / 30));
   } else {
-    s -= 5; // 旧快照无稳定性档案
+    s -= 8; // 无稳定性档案(通常为旧快照)按约半月资历处理
   }
   return Math.round(Math.max(0, Math.min(100, s)) * 10) / 10;
 }
