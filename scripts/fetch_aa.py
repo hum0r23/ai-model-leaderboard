@@ -58,27 +58,100 @@ def iter_nested(obj: Any) -> Iterable[Any]:
             yield from iter_nested(v)
 
 
-def extract_models_from_page(html: str) -> list[dict[str, Any]]:
-    pattern = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)</script>')
-    for match in pattern.finditer(html):
+_PUSH_RE = re.compile(r'self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)</script>')
+_ROW_RE = re.compile(r"^([0-9a-z]+):(.*)$", re.S)
+
+
+def _iter_flight_rows(html: str) -> Iterable[Any]:
+    """Yield every JSON-decodable RSC flight row found in the page HTML.
+
+    Next.js streams the flight payload as `self.__next_f.push([1,"<js string>"])`.
+    One push may carry several rows separated by real newlines; each row looks like
+    `<hex-id>:<json>`. Both the chunk-level string and the per-row JSON are decoded
+    defensively, so a single malformed row no longer aborts the whole extraction.
+    """
+    for match in _PUSH_RE.finditer(html):
         try:
             decoded = json.loads(match.group(1))
         except json.JSONDecodeError:
             continue
-        if '"models":' not in decoded or ":" not in decoded:
+        if not isinstance(decoded, str):
             continue
-        payload = decoded.split(":", 1)[1]
-        try:
-            obj = json.loads(payload)
-        except json.JSONDecodeError:
-            continue
+        for raw_row in decoded.split("\n"):
+            row = raw_row.strip()
+            if not row:
+                continue
+            body = None
+            mm = _ROW_RE.match(row)
+            if mm:
+                body = mm.group(2)
+            for candidate in (body, row):
+                if not candidate:
+                    continue
+                try:
+                    yield json.loads(candidate)
+                    break
+                except json.JSONDecodeError:
+                    continue
+
+
+def _looks_like_model_list(lst: Any) -> bool:
+    if not isinstance(lst, list) or len(lst) < 10:
+        return False
+    head = lst[0]
+    if not isinstance(head, dict):
+        return False
+    # 新版载荷用 initialModels(slug + intelligenceIndex),
+    # 旧版载荷用 models(slug + modelCreatorId),两者都认。
+    return "slug" in head and ("intelligenceIndex" in head or "modelCreatorId" in head)
+
+
+def extract_models_from_page(html: str) -> list[dict[str, Any]]:
+    """Return the richest model list embedded in the leaderboard page.
+
+    AA 改版(2026-10)后,表格数据挂在 `initialModels` 上,而模型表里不再带
+    `modelCreatorId`。这里同时兼容 old/new 两种载荷,并取最长的那份列表
+    (页面里还有 modelsAndReleases 的变体索引等短列表,需要排除)。
+    """
+    best: list[dict[str, Any]] | None = None
+    for obj in _iter_flight_rows(html):
         for node in iter_nested(obj):
             if not isinstance(node, dict):
                 continue
-            models = node.get("models")
-            if isinstance(models, list) and models and isinstance(models[0], dict) and "modelCreatorId" in models[0]:
-                return clean_value(models)
-    raise RuntimeError("Could not locate detailed llm models payload in page HTML")
+            for key in ("initialModels", "models"):
+                lst = node.get(key)
+                if not _looks_like_model_list(lst):
+                    continue
+                if best is None or len(lst) > len(best):
+                    best = lst
+    if best is None:
+        raise RuntimeError("Could not locate detailed llm models payload in page HTML")
+    return clean_value(best)
+
+
+def extract_release_index(html: str) -> dict[str, Any]:
+    """Build slug -> release metadata (releaseDate / creator slug / logo) index.
+
+    新版表格列表不再逐条带 releaseDate,发布日期只在 `modelsAndReleases` 里:
+      releases: [{slug, name, deprecated, releaseDate, creator{slug,name,logo}}]
+      models  : [{slug, name, releaseSlug}]   # 变体 slug -> 版本 slug
+    """
+    releases: dict[str, Any] = {}
+    variant_map: dict[str, str] = {}
+    for obj in _iter_flight_rows(html):
+        for node in iter_nested(obj):
+            if not isinstance(node, dict):
+                continue
+            mr = node.get("modelsAndReleases")
+            if not isinstance(mr, dict):
+                continue
+            for rel in mr.get("releases") or []:
+                if isinstance(rel, dict) and rel.get("slug"):
+                    releases[rel["slug"]] = rel
+            for var in mr.get("models") or []:
+                if isinstance(var, dict) and var.get("slug") and var.get("releaseSlug"):
+                    variant_map[var["slug"]] = var["releaseSlug"]
+    return {"releases": releases, "variants": variant_map}
 
 
 def _eval_total_tokens(eval_token_counts: Any) -> int | None:
@@ -92,34 +165,51 @@ def _eval_total_tokens(eval_token_counts: Any) -> int | None:
     return total
 
 
-def normalize(model: dict[str, Any]) -> dict[str, Any]:
+def normalize(model: dict[str, Any], release_index: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Normalize one AA row into this repo's schema (tolerant of both AA payload shapes)."""
+    index = release_index or {}
+    releases = index.get("releases") or {}
+    variants = index.get("variants") or {}
+    slug = model.get("slug")
+    release = releases.get(slug) or releases.get(variants.get(slug) or "") or {}
+    rel_creator = release.get("creator") or {}
+
+    eval_tokens = _eval_total_tokens(model.get("evalTokenCounts"))
+    is_estimated = model.get("intelligenceIndexIsEstimated")
+
     return {
-        "id": model.get("id"),
+        "id": model.get("id") or slug,
         "name": model.get("name"),
         "shortName": model.get("shortName") or model.get("name"),
-        "slug": model.get("slug"),
-        "releaseDate": model.get("releaseDate"),
+        "slug": slug,
+        "releaseDate": model.get("releaseDate") or release.get("releaseDate"),
         "isReasoning": model.get("isReasoning"),
-        "deprecated": model.get("deprecated", False),
+        "deprecated": model.get("deprecated", False) or release.get("deprecated", False),
         "creator": {
-            "name": model.get("modelCreatorName"),
-            "slug": model.get("modelCreatorSlug"),
+            "name": model.get("modelCreatorName") or rel_creator.get("name"),
+            "slug": model.get("modelCreatorSlug") or rel_creator.get("slug"),
             "country": model.get("modelCreatorCountry"),
             "color": model.get("modelCreatorColor"),
+            "logo": model.get("modelCreatorLogo") or rel_creator.get("logo"),
         },
         "evaluations": {
             "intelligenceIndex": model.get("intelligenceIndex"),
-            "intelligenceIndexIsEstimated": model.get("intelligenceIndexIsEstimated"),
+            "intelligenceIndexIsEstimated": is_estimated,
+            # AA 2026-10 改版后表格载荷不再含 codingIndex / agenticIndex,
+            # 保持字段存在(值为 None),前端据此自动隐藏对应列并重新归一综合分。
             "codingIndex": model.get("codingIndex"),
             "agenticIndex": model.get("agenticIndex"),
             "terminalbenchHard": model.get("terminalbenchHard"),
-            "terminalbenchV21": model.get("terminalbenchV21"),
+            # 新版字段名是 terminalBench21/terminalBench40(注意大小写)
+            "terminalbenchV21": model.get("terminalbenchV21") or model.get("terminalBench21"),
+            "terminalBench40": model.get("terminalBench40"),
             "tau2": model.get("tau2"),
             "tauBanking": model.get("tauBanking"),
             "scicode": model.get("scicode"),
             "lcr": model.get("lcr"),
             "omniscience": model.get("omniscience"),
             "omniscienceAccuracy": model.get("omniscienceAccuracy"),
+            "omniscienceNonHallucination": model.get("omniscienceNonHallucination"),
             "ifbench": model.get("ifbench"),
             "hle": model.get("hle"),
             "gpqa": model.get("gpqa"),
@@ -129,22 +219,30 @@ def normalize(model: dict[str, Any]) -> dict[str, Any]:
             "gdpvalNormalized": model.get("gdpvalNormalized"),
             "mmmuPro": model.get("mmmuPro"),
         },
-        "evalStats": {
-            "totalTokens": _eval_total_tokens(model.get("evalTokenCounts")),
-            "isEstimated": model.get("intelligenceIndexIsEstimated"),
-        },
+        # evalTokenCounts 在新载荷里也没有了,此时给 None 而不是 0,
+        # 让前端区分「没有这项数据」与「评测规模为 0」。
+        "evalStats": (
+            {"totalTokens": eval_tokens, "isEstimated": is_estimated}
+            if eval_tokens is not None
+            else None
+        ),
         "pricing": {
             "price1mInputTokens": model.get("price1mInputTokens"),
             "price1mOutputTokens": model.get("price1mOutputTokens"),
             "price1mBlended3To1": model.get("price1mBlended0To3To1"),
+            "cacheHitPrice": model.get("cacheHitPrice"),
+            "cacheWritePrice": model.get("cacheWritePrice"),
         },
         "performance": {
             "medianOutputTokensPerSecond": model.get("medianOutputTokensPerSecond"),
             "medianTimeToFirstTokenSeconds": model.get("medianTimeToFirstTokenSeconds"),
+            "medianReasoningTimeSeconds": model.get("medianReasoningTimeSeconds"),
         },
         "contextWindowTokens": model.get("contextWindowTokens"),
         "totalParameters": model.get("totalParameters"),
         "activeParameters": model.get("activeParameters"),
+        "paramClass": model.get("paramClass"),
+        "priceClass": model.get("priceClass"),
         "isOpenWeights": model.get("isOpenWeights"),
         "commercialAllowed": model.get("commercialAllowed"),
         "licenseName": model.get("licenseName"),
@@ -172,6 +270,9 @@ def _composite(model: dict[str, Any]) -> float | None:
             s += v * wt
             w += wt
     return s / w if w > 0 else None
+
+
+RETENTION_DAYS = 180
 
 
 def update_stability(models: list[dict[str, Any]], now: str) -> None:
@@ -204,6 +305,7 @@ def update_stability(models: list[dict[str, Any]], now: str) -> None:
         if cur is None:
             continue
         entry = stab["models"].setdefault(slug, {"deltas": [], "first_seen": now, "changes": 0})
+        entry["last_seen"] = now
         if slug in prev:
             pc = _composite(prev[slug])
             if pc is not None:
@@ -220,12 +322,29 @@ def update_stability(models: list[dict[str, Any]], now: str) -> None:
             if not entry.get("first_seen"):
                 entry["first_seen"] = now
 
-    # prune models that disappeared from the leaderboard
+    # 清理长期不再出现的模型,但保留宽限期:
+    # AA 新版表格不再返回 deprecated 模型,若按「不在本轮榜单就删」会一次性抹掉
+    # 数百条资历档案;改为 last_seen 超过 RETENTION_DAYS 才清。
     cur_slugs = {m.get("slug") for m in models if m.get("slug")}
-    stab["models"] = {k: v for k, v in stab["models"].items() if k in cur_slugs}
+    kept: dict[str, Any] = {}
+    for slug, entry in stab["models"].items():
+        if slug in cur_slugs:
+            kept[slug] = entry
+            continue
+        entry.setdefault("last_seen", entry.get("first_seen") or now)
+        try:
+            age_days = (datetime.fromisoformat(now) - datetime.fromisoformat(entry["last_seen"])).days
+        except Exception:
+            age_days = 0
+        if age_days <= RETENTION_DAYS:
+            kept[slug] = entry
+    stab["models"] = kept
 
     with open(stab_path, "w", encoding="utf-8") as f:
         json.dump(stab, f, ensure_ascii=False)
+
+
+MIN_EXPECTED_MODELS = 50
 
 
 def main() -> int:
@@ -234,9 +353,34 @@ def main() -> int:
     print(f"[fetch] page bytes: {len(html)}")
     raw_models = extract_models_from_page(html)
     print(f"[fetch] raw models: {len(raw_models)}")
+    if len(raw_models) < MIN_EXPECTED_MODELS:
+        # 防呆:载荷结构漂移时宁可整轮失败也不要写坏快照
+        raise RuntimeError(
+            f"Only {len(raw_models)} models extracted (< {MIN_EXPECTED_MODELS}); refusing to write snapshot"
+        )
 
-    models = [normalize(m) for m in raw_models]
+    release_index = extract_release_index(html)
+    print(f"[fetch] release index: {len(release_index['releases'])} releases, "
+          f"{len(release_index['variants'])} variants")
+
+    models = [normalize(m, release_index) for m in raw_models]
     now = datetime.now(timezone.utc).isoformat()
+
+    n = len(models) or 1
+    coverage = {
+        "releaseDate": sum(1 for m in models if m.get("releaseDate")),
+        "codingIndex": sum(1 for m in models if m["evaluations"].get("codingIndex") is not None),
+        "agenticIndex": sum(1 for m in models if m["evaluations"].get("agenticIndex") is not None),
+        "terminal": sum(
+            1
+            for m in models
+            if m["evaluations"].get("terminalbenchV21") is not None
+            or m["evaluations"].get("terminalbenchHard") is not None
+        ),
+        "evalStats": sum(1 for m in models if (m.get("evalStats") or {}).get("totalTokens")),
+    }
+    print("[fetch] field coverage: " + ", ".join(f"{k}={v}/{len(models)}" for k, v in coverage.items()))
+
 
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     llms_path = DATA_DIR / "llms.json"
@@ -248,6 +392,12 @@ def main() -> int:
                     "fetched_at": now,
                     "model_count": len(models),
                     "attribution": "Data provided by Artificial Analysis — https://artificialanalysis.ai/",
+                    "payload": "initialModels" if raw_models and "modelCreatorId" not in raw_models[0] else "models",
+                    "field_coverage": coverage,
+                    "note": (
+                        "AA 2026-10 改版后表格载荷不再包含 codingIndex/agenticIndex/evalTokenCounts,"
+                        "综合分按可用维度自动重新归一;deprecated 模型不再出现在源页面中。"
+                    ),
                 },
                 "models": models,
             },

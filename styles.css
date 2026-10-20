@@ -183,3 +183,9 @@ footer a { color: var(--ink-2); }
   .notes { grid-template-columns: 1fr; }
   .hero h1 { font-size: 24px; }
 }
+
+/* ---------- 维度不可用时的整列/整页签隐藏 ----------
+ * AA 2026-10 改版后不再输出 codingIndex / agenticIndex,
+ * 由 app.js 在数据集级判定后给 <body> 挂 class,避免留一列全是 "—"。 */
+body.no-codingIndex .col-codingIndex,
+body.no-agenticIndex .col-agenticIndex { display: none !important; }

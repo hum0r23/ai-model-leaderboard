@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>全球 AI 大模型综合能力排行榜 · 实时数据</title>
 <meta name="description" content="实时更新的全球 AI 大模型综合能力排行榜:智能、编码、Agentic、Terminal-Bench 多维度对比,数据直抓 Artificial Analysis 公开排行榜,每日快照兜底。纯实时数据,无手动填充。" />
-<link rel="stylesheet" href="styles.css?v=20260813h" />
+<link rel="stylesheet" href="styles.css?v=20261020a" />
 <link rel="repo" href="" />
 </head>
 <body>
@@ -14,7 +14,7 @@
   <header class="hero">
     <div>
       <h1>全球 AI 大模型 <span class="accent">综合能力排行榜</span></h1>
-      <div class="sub">多维度实时对比 · 智能 / 编码 / Agentic / Terminal-Bench · Top 20</div>
+      <div class="sub" id="hero-sub">多维度实时对比 · 智能 / 编码 / Agentic / Terminal-Bench · Top 20</div>
     </div>
     <div class="live-badge"><span class="dot"></span>LIVE 实时数据</div>
   </header>
@@ -38,15 +38,15 @@
   <div class="tabs" id="tabs">
     <button class="tab active" data-key="composite">综合排序<span id="tab-arrow"> ↓</span></button>
     <button class="tab" data-key="intelligenceIndex">智能程度</button>
-    <button class="tab" data-key="codingIndex">Coding 编码</button>
-    <button class="tab" data-key="agenticIndex">Agentic 智能体</button>
+    <button class="tab col-codingIndex" data-key="codingIndex">Coding 编码</button>
+    <button class="tab col-agenticIndex" data-key="agenticIndex">Agentic 智能体</button>
     <button class="tab" data-key="terminal">Terminal-Bench</button>
     <button class="tab active" id="agg-btn" style="margin-left:auto;border-color:var(--brand);color:var(--brand)">聚合模式:最强变体 ✓</button>
   </div>
 
   <div class="chart-card">
     <div class="chart-title">综合得分 Top 12</div>
-    <div class="chart-sub">综合分 = 智能 35% + 编码 25% + Agentic 20% + Terminal 20%(缺失维度自动按比例归一)</div>
+    <div class="chart-sub" id="chart-sub">综合分 = 智能 35% + 编码 25% + Agentic 20% + Terminal 20%(缺失维度自动按比例归一)</div>
     <div class="bars" id="chart-bars"><div style="color:var(--ink-3);font-size:13px">加载中…</div></div>
   </div>
 
@@ -59,8 +59,8 @@
             <th>模型 / 厂商</th>
             <th class="sortable" data-key="composite">综合 <span class="arrow"></span></th>
             <th class="sortable" data-key="intelligenceIndex">智能 <span class="arrow"></span></th>
-            <th class="sortable" data-key="codingIndex">编码 <span class="arrow"></span></th>
-            <th class="sortable" data-key="agenticIndex">Agentic <span class="arrow"></span></th>
+            <th class="sortable col-codingIndex" data-key="codingIndex">编码 <span class="arrow"></span></th>
+            <th class="sortable col-agenticIndex" data-key="agenticIndex">Agentic <span class="arrow"></span></th>
             <th class="sortable" data-key="terminal">Terminal <span class="arrow"></span></th>
             <th class="sortable" data-key="maturity" title="数据成熟度(进度):越接近100表示排名越稳定可靠">成熟度 <span class="arrow"></span></th>
           </tr>
@@ -80,7 +80,7 @@
       <ul>
         <li><b>实时主源:</b>打开页面时直抓 <a href="https://artificialanalysis.ai/leaderboards/models" target="_blank" rel="noopener">Artificial Analysis</a> 公开排行榜页,浏览器内解析,数据即当前最新;若其站点暂不允许浏览器直连,自动切换为下方同步快照。</li>
         <li><b>同步快照:</b>GitHub Actions 每 6 小时服务器端自动抓取生成 <code>data/llms.json</code>,最大延迟 6 小时;实时源恢复后自动切回。</li>
-        <li><b>综合分</b>= 智能 35% + 编码 25% + Agentic 20% + Terminal-Bench 20%,缺失维度自动重新归一。</li>
+        <li id="note-formula"><b>综合分</b>= 智能 35% + 编码 25% + Agentic 20% + Terminal-Bench 20%,缺失维度自动重新归一。</li>
         <li>Terminal-Bench 取 2.1 版优先,缺失时回退 Hard 版。</li>
         <li><b>数据成熟度</b>(进度语义:100 = 排名已稳定可靠;基于 AA 官方数据 + 本站快照历史派生):估算 -35、维度缺失 -10/维、评测样本规模、分数历史波动与上榜资历逐项递减;悬停可看明细。</li>
         <li>本页仅展示实时源原始数据,无任何手动填充条目。</li>
@@ -94,6 +94,6 @@
 </div>
 
 <div class="toast" id="toast"></div>
-<script src="app.js?v=20260813h"></script>
+<script src="app.js?v=20261020a"></script>
 </body>
 </html>

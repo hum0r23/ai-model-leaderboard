@@ -36,6 +36,7 @@ const state = {
   count: 0,
   refreshing: false,
   stability: null,   // data/stability.json(分数波动 + 首次上榜时间)
+  dimsAvailable: null, // 数据集级维度可用性(源站改版后某些维度可能整体消失)
 };
 
 /* ---------------- helpers ---------------- */
@@ -77,31 +78,87 @@ function* iterNested(obj) {
   if (Array.isArray(obj)) for (const v of obj) yield* iterNested(v);
   else if (obj && typeof obj === "object") for (const k of Object.keys(obj)) yield* iterNested(obj[k]);
 }
-function findModelsRoot(obj) {
-  for (const node of iterNested(obj)) {
-    if (node && typeof node === "object" && !Array.isArray(node)) {
-      const ms = node["models"];
-      if (Array.isArray(ms) && ms.length && ms[0] && typeof ms[0] === "object" && "modelCreatorId" in ms[0]) {
-        return cleanValue(ms);
-      }
-    }
-  }
-  return null;
-}
-function parseAAPage(html) {
+function* iterFlightRows(html) {
   const re = /self\.__next_f\.push\(\[1,("(?:\\.|[^"\\])*")\]\)<\/script>/g;
   let m;
   while ((m = re.exec(html)) !== null) {
     let decoded;
     try { decoded = JSON.parse(m[1]); } catch (e) { continue; }
-    if (typeof decoded !== "string" || !decoded.includes('"models":') || !decoded.includes(":")) continue;
-    const payload = decoded.slice(decoded.indexOf(":") + 1);
-    let obj;
-    try { obj = JSON.parse(payload); } catch (e) { continue; }
-    const models = findModelsRoot(obj);
-    if (models) return models;
+    if (typeof decoded !== "string") continue;
+    for (const rawRow of decoded.split("\n")) {
+      const row = rawRow.trim();
+      if (!row) continue;
+      const mm = /^([0-9a-z]+):([\s\S]*)$/.exec(row);
+      const candidates = mm ? [mm[2], row] : [row];
+      for (const c of candidates) {
+        if (!c) continue;
+        try { yield JSON.parse(c); break; } catch (e) { /* try next */ }
+      }
+    }
   }
-  return null;
+}
+function looksLikeModelList(list) {
+  return (
+    Array.isArray(list) && list.length >= 10 && list[0] && typeof list[0] === "object" &&
+    "slug" in list[0] && ("intelligenceIndex" in list[0] || "modelCreatorId" in list[0])
+  );
+}
+// 页面里有多份列表(表格 initialModels / 变体索引 models / releases),
+// 只认「含 slug 且含评分字段」且最长的那份。
+function findModelsRoot(rows) {
+  let best = null;
+  for (const obj of rows) {
+    for (const node of iterNested(obj)) {
+      if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+      for (const key of ["initialModels", "models"]) {
+        const lst = node[key];
+        if (!looksLikeModelList(lst)) continue;
+        if (!best || lst.length > best.length) best = lst;
+      }
+    }
+  }
+  return best ? cleanValue(best) : null;
+}
+// AA 2026-10 改版后,发布日期与厂商 slug 只在 modelsAndReleases 里,
+// 表格行只带 modelCreatorName/Color,需要按 slug 回填。
+function findReleaseIndex(rows) {
+  const releases = {}, variants = {};
+  for (const obj of rows) {
+    for (const node of iterNested(obj)) {
+      if (!node || typeof node !== "object" || Array.isArray(node)) continue;
+      const mr = node.modelsAndReleases;
+      if (!mr || typeof mr !== "object") continue;
+      for (const rel of mr.releases || []) {
+        if (rel && rel.slug) releases[rel.slug] = rel;
+      }
+      for (const v of mr.models || []) {
+        if (v && v.slug && v.releaseSlug) variants[v.slug] = v.releaseSlug;
+      }
+    }
+  }
+  return { releases, variants };
+}
+function mergeReleaseInfo(models, index) {
+  const releases = (index && index.releases) || {};
+  const variants = (index && index.variants) || {};
+  return models.map((m) => {
+    const rel = releases[m.slug] || releases[variants[m.slug] || ""] || null;
+    if (!rel) return m;
+    const creator = rel.creator || {};
+    return {
+      ...m,
+      releaseDate: m.releaseDate || rel.releaseDate || null,
+      deprecated: m.deprecated === true || rel.deprecated === true,
+      modelCreatorName: m.modelCreatorName || creator.name,
+      modelCreatorSlug: m.modelCreatorSlug || creator.slug,
+    };
+  });
+}
+function parseAAPage(html) {
+  const rows = [...iterFlightRows(html)];
+  const models = findModelsRoot(rows);
+  if (!models) return null;
+  return mergeReleaseInfo(models, findReleaseIndex(rows));
 }
 
 /* ---------------- 归一化 ---------------- */
@@ -139,7 +196,10 @@ function normalize(raw) {
       codingIndex: raw.evaluations ? raw.evaluations.codingIndex : raw.codingIndex ?? null,
       agenticIndex: raw.evaluations ? raw.evaluations.agenticIndex : raw.agenticIndex ?? null,
       terminalbenchHard: raw.evaluations ? raw.evaluations.terminalbenchHard : raw.terminalbenchHard ?? null,
-      terminalbenchV21: raw.evaluations ? raw.evaluations.terminalbenchV21 : raw.terminalbenchV21 ?? null,
+      // 新版 AA 字段名是 terminalBench21(大小写不同),两版都兼容
+      terminalbenchV21: raw.evaluations
+        ? raw.evaluations.terminalbenchV21
+        : (raw.terminalbenchV21 ?? raw.terminalBench21 ?? null),
     },
     evalStats:
       (raw.evaluations && raw.evaluations.evalStats) ||
@@ -189,22 +249,40 @@ function dimValue(m, key) {
 /* ---------------- 数据成熟度(进度语义) ----------------
  * 官方无现成字段,基于 AA 官方数据 + 本站快照历史派生,满分 100 递减:
  *   估算 -35(离散:官方 intelligenceIndexIsEstimated)
- *   维度缺失 -10/维(离散)
- *   评测规模(连续):对数映射, 1M tokens→-18, 100M→-6, 1B→0
+ *   维度缺失 -10/维(离散,分母 = 当前数据集实际提供的维度数)
+ *   评测规模(连续):对数映射, 1M tokens→-18, 100M→-6, 1B→0(源站不再提供该字段时跳过)
  *   分数波动(连续):最近快照 delta 0.2→0, 2+→-10 线性;变动次数累计 -3/次(封顶-10)
  *   资历(连续):0 天→-18, 30 天→0 线性衰减(取发布日/首次上榜较早者)
  * 100 = 排名已稳定可靠(进度条走满)。返回 1 位小数。
  */
+// 维度缺失惩罚的分母跟着数据源走:AA 2026-10 改版后不再输出
+// codingIndex / agenticIndex,若仍按 4 维算,全部模型会平白各扣 20 分。
+function maturityDimsOf(m) {
+  const ev = m.evaluations;
+  const avail = state.dimsAvailable || { codingIndex: true, agenticIndex: true };
+  const dims = [ev.intelligenceIndex];
+  if (avail.codingIndex) dims.push(ev.codingIndex);
+  if (avail.agenticIndex) dims.push(ev.agenticIndex);
+  dims.push(ev.terminalbenchV21 ?? ev.terminalbenchHard);
+  return dims;
+}
 function maturityScore(m) {
   const ev = m.evaluations;
-  const dims = [ev.intelligenceIndex, ev.codingIndex, ev.agenticIndex, ev.terminalbenchV21 ?? ev.terminalbenchHard];
+  const dims = maturityDimsOf(m);
   const complete = dims.filter((v) => v != null && isFinite(v)).length;
   let s = 100;
   if (ev.intelligenceIndexIsEstimated) s -= 35;
-  s -= (4 - complete) * 10;
+  s -= (dims.length - complete) * 10;
+  const hasEvalStats = !state.dimsAvailable || state.dimsAvailable.evalTokens;
   const t = (m.evalStats && m.evalStats.totalTokens) || 0;
-  if (t <= 0) s -= 18;
-  else s -= Math.max(0, Math.min(18, 18 - 6 * Math.log10(t / 1e6)));
+  if (hasEvalStats) {
+    if (t <= 0) s -= 18;
+    else s -= Math.max(0, Math.min(18, 18 - 6 * Math.log10(t / 1e6)));
+  } else {
+    // 源站整体不再提供评测样本量:统一按「未知」扣一半,保住靠谱度的保守语义
+    // (若直接跳过,大部分模型会顶到 100,指标就失去区分度)
+    s -= 10;
+  }
   // ---- 稳定性:波动 + 资历(连续)----
   const st = state.stability && state.stability.models && state.stability.models[m.slug];
   if (st) {
@@ -220,6 +298,17 @@ function maturityScore(m) {
     s -= 8; // 无稳定性档案(通常为旧快照)按约半月资历处理
   }
   return Math.round(Math.max(0, Math.min(100, s)) * 10) / 10;
+}
+
+/* 数据集级维度可用性:决定列/页签显隐与成熟度分母 */
+function computeAvailability(models) {
+  const has = (fn) => models.some(fn);
+  const num = (v) => v != null && isFinite(v);
+  return {
+    codingIndex: has((m) => num(m.evaluations.codingIndex)),
+    agenticIndex: has((m) => num(m.evaluations.agenticIndex)),
+    evalTokens: has((m) => !!(m.evalStats && m.evalStats.totalTokens > 0)),
+  };
 }
 
 /* ---------------- 聚合 ---------------- */
@@ -370,6 +459,9 @@ async function loadData(forceLive = false) {
   try { overlays = await fetchLocal(OVERRIDES); } catch (e) { console.warn("overrides unavailable", e); }
   const merged = mergeOverlays(parsed.map(normalize), (overlays.models || []).map(normalize));
 
+  // 先判定数据集支持哪些维度,再算成熟度(分母与列显隐都依赖它)
+  state.dimsAvailable = computeAvailability(merged);
+
   // 加载稳定性档案(分数波动 + 首次上榜时间,由快照历史维护)
   let stability = null;
   try { stability = await fetchLocal("data/stability.json"); } catch (e) { console.warn("stability unavailable", e); }
@@ -432,8 +524,8 @@ function rowHtml(m, i) {
     <td>${modelCell(m, i)}</td>
     <td class="td-composite">${m._composite != null ? m._composite.toFixed(1) : "—"}</td>
     <td class="cell-score">${scoreCell(dimValue(m, "intelligenceIndex"))}</td>
-    <td class="cell-score">${scoreCell(dimValue(m, "codingIndex"))}</td>
-    <td class="cell-score">${scoreCell(dimValue(m, "agenticIndex"))}</td>
+    <td class="cell-score col-codingIndex">${scoreCell(dimValue(m, "codingIndex"))}</td>
+    <td class="cell-score col-agenticIndex">${scoreCell(dimValue(m, "agenticIndex"))}</td>
     <td class="cell-score dim-terminal" title="${terminalLabel}">${scoreCell(t.v)}</td>
     <td class="cell-score dim-maturity" title="${maturityHint(m)}">${maturityCell(maturity)}</td>
   </tr>`;
@@ -441,18 +533,19 @@ function rowHtml(m, i) {
 
 function maturityHint(m) {
   const ev = m.evaluations;
-  const dims = [ev.intelligenceIndex, ev.codingIndex, ev.agenticIndex, ev.terminalbenchV21 ?? ev.terminalbenchHard];
+  const dims = maturityDimsOf(m);
   const c = dims.filter((v) => v != null && isFinite(v)).length;
+  const hasEvalStats = !state.dimsAvailable || state.dimsAvailable.evalTokens;
   const t = (m.evalStats && m.evalStats.totalTokens) || 0;
   const st = state.stability && state.stability.models && state.stability.models[m.slug];
   let stabNote = "暂无历史档案";
   if (st) {
     const deltas = st.deltas || [];
-    const last = deltas.length ? deltas[deltas.length - 1] : 0;
     stabNote = `近 ${deltas.length} 次快照最大波动 ${Math.max(0, ...deltas).toFixed(1)} 分 · 变动 ${st.changes || 0} 次`;
     if (st.first_seen) stabNote += ` · 上榜于 ${new Date(st.first_seen).toLocaleDateString("zh-CN")}`;
   }
-  return `成熟度=100 减去:维度缺失 ${4 - c}/4(-${(4 - c) * 10}) · ${ev.intelligenceIndexIsEstimated ? "官方估算(-35)" : "非估算"} · 评测样本约 ${(t / 1e6).toFixed(0)}M tokens · ${stabNote}`;
+  const sampleNote = hasEvalStats ? `评测样本约 ${(t / 1e6).toFixed(0)}M tokens` : "源站未提供评测样本量(-10)";
+  return `成熟度=100 减去:维度缺失 ${dims.length - c}/${dims.length}(-${(dims.length - c) * 10}) · ${ev.intelligenceIndexIsEstimated ? "官方估算(-35)" : "非估算"} · ${sampleNote} · ${stabNote}`;
 }
 
 function maturityCell(v) {
@@ -472,7 +565,44 @@ function sortModels() {
   });
 }
 
+/* 源站若不再提供某维度,对应列/页签整体隐藏(而不是留一列全 "—") */
+function applyDimensions() {
+  const a = state.dimsAvailable || { codingIndex: true, agenticIndex: true };
+  document.body.classList.toggle("no-codingIndex", !a.codingIndex);
+  document.body.classList.toggle("no-agenticIndex", !a.agenticIndex);
+  if (state.sortKey === "codingIndex" && !a.codingIndex) state.sortKey = "composite";
+  if (state.sortKey === "agenticIndex" && !a.agenticIndex) state.sortKey = "composite";
+  const sub = $("#chart-sub");
+  const heroSub = $("#hero-sub");
+  const noteFormula = $("#note-formula");
+  if (noteFormula) {
+    const parts = [`智能 35%`];
+    if (a.codingIndex) parts.push("编码 25%");
+    if (a.agenticIndex) parts.push("Agentic 20%");
+    parts.push("Terminal-Bench 20%");
+    noteFormula.innerHTML = `<b>综合分</b> = ${parts.join(" + ")},缺失维度自动重新归一` +
+      (a.codingIndex && a.agenticIndex ? "。" : "(源站当前未提供编码 / Agentic 指数,已按可用维度加权)。");
+  }
+  if (heroSub) {
+    const dims = ["智能"];
+    if (a.codingIndex) dims.push("编码");
+    if (a.agenticIndex) dims.push("Agentic");
+    dims.push("Terminal-Bench", "数据成熟度");
+    heroSub.textContent = `多维度实时对比 · ${dims.join(" / ")} · Top 20`;
+  }
+  if (sub) {
+    const parts = ["智能 35%"];
+    if (a.codingIndex) parts.push("编码 25%");
+    if (a.agenticIndex) parts.push("Agentic 20%");
+    parts.push("Terminal 20%");
+    sub.textContent =
+      `综合分 = ${parts.join(" + ")}(按实际可用维度重新归一)` +
+      (a.codingIndex && a.agenticIndex ? "" : " · 源站当前未提供编码/Agentic 指数,已自动降级为可用维度加权");
+  }
+}
+
 function render() {
+  applyDimensions();
   sortModels();
   const tbody = $("#tbody");
   const rows = state.models.slice(0, state.limit).map(rowHtml).join("");
