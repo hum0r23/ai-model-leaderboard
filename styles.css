@@ -189,3 +189,6 @@ footer a { color: var(--ink-2); }
  * 由 app.js 在数据集级判定后给 <body> 挂 class,避免留一列全是 "—"。 */
 body.no-codingIndex .col-codingIndex,
 body.no-agenticIndex .col-agenticIndex { display: none !important; }
+
+/* 聚合按钮自带内联 color:var(--brand),激活时背景也是品牌色 → 文字会看不见 */
+#agg-btn.active { color: #fff !important; }
